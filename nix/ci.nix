@@ -1,10 +1,6 @@
+{ sources ? import ../npins }:
 {
-    pkgs ? import ./pin.nix {}, ...
-}:
-{
-  # https://github.com/NixOS/nixpkgs/blob/master/pkgs/top-level/haskell-packages.nix#L47
-  ghc-def = import ../default.nix { inherit pkgs; };
-  ghc-810 = import ../default.nix {compiler = "ghc8102"; inherit pkgs;};
-  # ghc-901 = import ../default.nix {compiler = "ghc901"; inherit pkgs;};
-  # test = pkgs.nixosTest nix/test.nix;
+  # The library holds every component proof and the test suite runs programs on
+  # the processor, so a successful build is the whole check.
+  native = import ../default.nix { hpkgs = import ./hpkgs.nix { pkgs = import ./pkgs.nix { inherit sources; }; }; };
 }

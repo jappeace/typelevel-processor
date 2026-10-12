@@ -5,15 +5,13 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ScopedTypeVariables#-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
 
--- | Basic logic gates
+-- | Counting, but with extra steps.
 module Arithmetics where
 
 import LogicGates
+import Bytewise
 
 -- | An add component that adds two bits. The output is a two-bit value.
 -- | The h output is the high bit, the l is the low bit.
@@ -35,19 +33,16 @@ halfAdderProof4 = nil
 
 -- | An add component which adds three bits: a, b, and c.
 -- The output is a two-bit value. The h output is the high bit, the l is the low bit.
+--
+-- The first version had seven parts and a theory about which cases were
+-- special. This is the textbook one: add two bits, add the third to that,
+-- and at most one of the two half adders can carry.
 class Adder1 (a :: Axiom) (b :: Axiom) (c :: Axiom) (h :: Axiom) (l :: Axiom) | a b c -> h l
 
 instance (
-          -- case of all enabled
-           And b c allout1
-         , And allout1 a allout2
-         , Or allout2 lout2 l
-
-         -- other cases
-         , HalfAdder b c hout1 lout1
-         , Or hout1 lout1 orout1
-         , Or a hout1 orout2
-         , HalfAdder orout2 orout1 h lout2
+           HalfAdder a b carryAB sumAB
+         , HalfAdder sumAB c carryC l
+         , Or carryAB carryC h
          ) =>
   Adder1 a b c h l
 
@@ -147,9 +142,9 @@ _4bitAdderProof16 = nil
 _4bitAdderProof17 :: Adder4 '(F, F, F, T)  '(F, F, F, T) T '(F, F, T, T)  F=> b
 _4bitAdderProof17 = nil
 
-class Adder8 (a :: (Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom))
-             (b :: (Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom)) (c :: Axiom)
-             (s :: (Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom)) (cout :: Axiom)  | a b c -> cout s
+-- | The big one. Every byte of arithmetic the processor does goes through here,
+--   so if this is wrong, everything is wrong, but at least consistently.
+class Adder8 (a :: Byte) (b :: Byte) (c :: Axiom) (s :: Byte) (cout :: Axiom)  | a b c -> cout s
 
 instance
     ( Adder4 '(a3, a2, a1, a0)
@@ -163,92 +158,81 @@ instance
             '(b7, b6, b5, b4, b3, b2, b1, b0)
             c '(s7, s6, s5, s4, s3, s2, s1, s0) cout
 
-type Bit16 = (Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom, Axiom)
+_8bitAdderProof1 :: Adder8 '(F, F, T, F, T, F, T, F) '(F, F, F, F, T, T, T, T) F '(F, F, T, T, T, F, F, T) F => b
+_8bitAdderProof1 = nil
+_8bitAdderProof2 :: Adder8 '(T, T, T, T, T, T, T, T) '(F, F, F, F, F, F, F, T) F '(F, F, F, F, F, F, F, F) T => b
+_8bitAdderProof2 = nil
+-- 100 + 100, the only time this processor feels like a millionaire
+_8bitAdderProof3 :: Adder8 '(F, T, T, F, F, T, F, F) '(F, T, T, F, F, T, F, F) F '(T, T, F, F, T, F, F, F) F => b
+_8bitAdderProof3 = nil
+_8bitAdderProof4 :: Adder8 '(F, F, F, F, F, F, F, F) '(F, F, F, F, F, F, F, F) T '(F, F, F, F, F, F, F, T) F => b
+_8bitAdderProof4 = nil
 
-class Adder16 (a :: Bit16)
-              (b :: Bit16) (c :: Axiom)
-              (s :: Bit16) (cout :: Axiom)  | a b c -> cout s
+-- | Add one. Half adders are enough because the other operand is a single bit,
+--   no point bringing a full adder to a half adder fight.
+--   The final carry falls off the end of the byte, which is how 255 + 1 = 0.
+class Increment (a :: Byte) (s :: Byte) | a -> s
+instance ( HalfAdder a0 T  c1 s0
+         , HalfAdder a1 c1 c2 s1
+         , HalfAdder a2 c2 c3 s2
+         , HalfAdder a3 c3 c4 s3
+         , HalfAdder a4 c4 c5 s4
+         , HalfAdder a5 c5 c6 s5
+         , HalfAdder a6 c6 c7 s6
+         , HalfAdder a7 c7 _overflow s7
+         ) => Increment '(a7, a6, a5, a4, a3, a2, a1, a0) '(s7, s6, s5, s4, s3, s2, s1, s0)
 
-instance
-    ( Adder8 '(a7, a6, a5, a4, a3, a2, a1, a0)
-             '(b7, b6, b5, b4, b3, b2, b1, b0) c
-             '(s7, s6, s5, s4, s3, s2, s1, s0) midh
-    , Adder8 '(a15, a14, a13, a12, a11, a10, a9, a8)
-             '(b15, b14, b13, b12, b11, b10, b9, b8) midh
-             '(s15, s14, s13, s12, s11, s10, s9, s8) cout
-    ) => Adder16
-            '(a15, a14, a13, a12, a11, a10, a9, a8, a7, a6, a5, a4, a3, a2, a1, a0)
-            '(b15, b14, b13, b12, b11, b10, b9, b8, b7, b6, b5, b4, b3, b2, b1, b0)
-            c '(s15, s14, s13, s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, s0) cout
-
-class Increment (a  :: Bit16) (s :: Bit16) | a -> s
-
-instance (
-  Adder16 a '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F) T s cout
-  ) => Increment a s
-
-incProof   :: Increment '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F)  '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T) => b
+incProof   :: Increment '(F, F, F, F, F, F, F, F) '(F, F, F, F, F, F, F, T) => b
 incProof   = nil
-
-incProof2  :: Increment '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T)  '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F) => b
+incProof2  :: Increment '(F, F, F, F, F, F, F, T) '(F, F, F, F, F, F, T, F) => b
 incProof2  = nil
-
-incProof16 :: Increment '(F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, F)  '(F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, T) => b
+incProof16 :: Increment '(F, F, F, F, T, T, T, F) '(F, F, F, F, T, T, T, T) => b
 incProof16 = nil
-
-incProofLots :: Increment '(T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F)  '(T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T) => b
+incProofLots :: Increment '(T, T, T, T, T, T, T, F) '(T, T, T, T, T, T, T, T) => b
 incProofLots = nil
-
-incProofOverflow :: Increment '(T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T)  '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F) => b
+incProofOverflow :: Increment '(T, T, T, T, T, T, T, T) '(F, F, F, F, F, F, F, F) => b
 incProofOverflow = nil
 
+-- | Subtract one, by adding 255 and pretending the carry never happened.
+class Decrement (a :: Byte) (s :: Byte) | a -> s
+instance Adder8 a '(T, T, T, T, T, T, T, T) F s _carry => Decrement a s
 
-class Invert (a  :: Bit16) (s  :: Bit16) | a -> s
-instance (
-   Not a15 s15, Not a14 s14, Not a13 s13, Not a12 s12, Not a11 s11, Not a10 s10,
-   Not a9 s9, Not a8 s8, Not a7 s7, Not a6 s6, Not a5 s5, Not a4 s4,
-   Not a3 s3, Not a2 s2, Not a1 s1, Not a0 s0
-  )
-    => Invert
-    '(a15, a14, a13, a12, a11, a10, a9, a8, a7, a6, a5, a4, a3, a2, a1, a0)
-    '(s15, s14, s13, s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, s0)
+decProof :: Decrement '(F, F, F, F, F, F, F, T) '(F, F, F, F, F, F, F, F) => b
+decProof = nil
+decProofUnderflow :: Decrement '(F, F, F, F, F, F, F, F) '(T, T, T, T, T, T, T, T) => b
+decProofUnderflow = nil
+decProofBorrow :: Decrement '(F, F, F, T, F, F, F, F) '(F, F, F, F, T, T, T, T) => b
+decProofBorrow = nil
 
-
-invProof :: Invert '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F)  '(T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T) => b
-invProof = nil
-
-invProof2 :: Invert '(T, F, T, F, T, F, T, F, T, F, T, F, T, F, T, F)  '(F, T, F, T, F, T, F, T, F, T, F, T, F, T, F, T) => b
-invProof2 = nil
-
-class Subtract (a  :: Bit16) (b  :: Bit16) (s  :: Bit16) | a b -> s
+-- | a - b = a + not b + 1. The + 1 sneaks in through the carry, so there's no
+--   need for a separate increment like the 16 bit version used to do.
+class Subtract (a  :: Byte) (b  :: Byte) (s  :: Byte) | a b -> s
 instance (
          Invert b bout
-         , Adder16 a bout F sout c
-         , Increment sout s
+         , Adder8 a bout T s _carry
          ) => Subtract a b s
 
-
-subtractProof0  :: Subtract '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F)  '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F) '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F) => b
+subtractProof0  :: Subtract '(F, F, F, F, F, F, F, F) '(F, F, F, F, F, F, F, F) '(F, F, F, F, F, F, F, F) => b
 subtractProof0  = nil
-subtractProof1  :: Subtract '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T)  '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F) '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T) => b
+subtractProof1  :: Subtract '(F, F, F, F, F, F, F, T) '(F, F, F, F, F, F, F, F) '(F, F, F, F, F, F, F, T) => b
 subtractProof1  = nil
-subtractProof2  :: Subtract '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T)  '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T) '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F) => b
+subtractProof2  :: Subtract '(F, F, F, F, F, F, F, T) '(F, F, F, F, F, F, F, T) '(F, F, F, F, F, F, F, F) => b
 subtractProof2  = nil
-
-subtractProofOVerflow  :: Subtract '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T)  '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F) '(T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T) => b
+subtractProofOVerflow  :: Subtract '(F, F, F, F, F, F, F, T) '(F, F, F, F, F, F, T, F) '(T, T, T, T, T, T, T, T) => b
 subtractProofOVerflow  = nil
-
-subtractProofOVerflow2 :: Subtract '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T)  '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T) '(T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F) => b
+subtractProofOVerflow2 :: Subtract '(F, F, F, F, F, F, F, T) '(F, F, F, F, F, F, T, T) '(T, T, T, T, T, T, T, F) => b
 subtractProofOVerflow2 = nil
-subtractProof22 :: Subtract '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F)  '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F) '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F) => b
+subtractProof22 :: Subtract '(F, F, F, F, F, F, T, F) '(F, F, F, F, F, F, T, F) '(F, F, F, F, F, F, F, F) => b
 subtractProof22 = nil
-subtractProof30 :: Subtract '(F, F, F, F, F, F, F, F, F, F, F, F, T, F, F, F)  '(F, F, F, F, F, F, F, F, F, F, F, F, T, F, F, F) '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F) => b
+subtractProof30 :: Subtract '(F, F, F, F, T, F, F, F) '(F, F, F, F, T, F, F, F) '(F, F, F, F, F, F, F, F) => b
 subtractProof30 = nil
-subtractProof40 :: Subtract '(T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F)  '(T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T) '(T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T) => b
+subtractProof40 :: Subtract '(T, F, F, F, F, F, F, F) '(T, F, F, F, F, F, F, T) '(T, T, T, T, T, T, T, T) => b
 subtractProof40 = nil
+-- 42 - 7, the answer to life minus a week
+subtractProof42 :: Subtract '(F, F, T, F, T, F, T, F) '(F, F, F, F, F, T, T, T) '(F, F, T, F, F, F, T, T) => b
+subtractProof42 = nil
 
-
-class IsZero4 (a  :: (Axiom, Axiom, Axiom, Axiom)) (s :: Axiom)
+class IsZero4 (a  :: (Axiom, Axiom, Axiom, Axiom)) (s :: Axiom) | a -> s
 
 instance (
           Or a3 a2 o1
@@ -257,37 +241,47 @@ instance (
          , Not o3 s
          ) => IsZero4 '(a3, a2, a1, a0) s
 
-class IsZero (a  :: Bit16) (s :: Axiom)
+-- | Is it nothing? Asks every bit, any single one of them can veto.
+class IsZero (a  :: Byte) (s :: Axiom) | a -> s
 
 instance (
-          IsZero4 '(a15, a14, a13, a12) o0
-         ,IsZero4 '(a11, a10,  a9,  a8) o1
-         ,IsZero4 '( a7,  a6,  a5,  a4) o2
-         ,IsZero4 '( a3,  a2,  a1,  a0) o3
-         , And o0 o1 o4
-         , And o2 o3 o5
-         , And o4 o5 s
-         ) => IsZero '(a15, a14, a13, a12, a11, a10, a9, a8, a7, a6, a5, a4, a3, a2, a1, a0) s
+          IsZero4 '(a7, a6, a5, a4) high
+         , IsZero4 '(a3, a2, a1, a0) low
+         , And high low s
+         ) => IsZero '(a7, a6, a5, a4, a3, a2, a1, a0) s
 
-zeroProof :: IsZero '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F)  T=> b
+zeroProof :: IsZero '(F, F, F, F, F, F, F, F) T => b
 zeroProof = nil
-
-zeroProof1 :: IsZero '(F, F, T, F, F, F, F, F, F, F, F, F, F, F, F, F)  F=> b
+zeroProof1 :: IsZero '(F, F, T, F, F, F, F, F) F => b
 zeroProof1 = nil
-
-zeroProof2 :: IsZero '(F, F, F, F, F, F, F, F, T, F, F, F, F, F, F, F)  F=> b
+zeroProof2 :: IsZero '(T, F, F, F, F, F, F, F) F => b
 zeroProof2 = nil
-
-zeroProof3 :: IsZero '(F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T)  F=> b
+zeroProof3 :: IsZero '(F, F, F, F, F, F, F, T) F => b
 zeroProof3 = nil
 
-class IsNegative (a  :: (Axiom, Axiom, Axiom, Axiom)) (s :: Axiom)
-instance IsNegative '(a3, a2, a1, a0) a3
+-- | Two's complement: the top bit is the sign. No gates required,
+--   it's just a wire with an opinion.
+class IsNegative (a :: Byte) (s :: Axiom) | a -> s
+instance IsNegative '(a7, a6, a5, a4, a3, a2, a1, a0) a7
 
-negativeProof :: IsNegative '(T, F, F, F)  T=> b
+negativeProof :: IsNegative '(T, F, F, F, F, F, F, F) T => b
 negativeProof = nil
-negativeProof2 :: IsNegative '(F, F, F, F)  F=> b
+negativeProof2 :: IsNegative '(F, T, T, T, T, T, T, T) F => b
 negativeProof2 = nil
+
+-- | Equal bytes have no bits that disagree.
+--   The processor uses this to notice a program jumping onto itself forever.
+class Equal (a :: Byte) (b :: Byte) (s :: Axiom) | a b -> s
+instance ( ByteXor a b disagreements
+         , IsZero disagreements s
+         ) => Equal a b s
+
+equalProof :: Equal '(T, F, T, F, F, F, T, T) '(T, F, T, F, F, F, T, T) T => b
+equalProof = nil
+equalProof2 :: Equal '(T, F, T, F, F, F, T, T) '(T, F, T, F, F, F, T, F) F => b
+equalProof2 = nil
+equalProof3 :: Equal '(F, F, F, F, F, F, F, F) '(T, F, F, F, F, F, F, F) F => b
+equalProof3 = nil
 
 x :: Int -- inhabitation means proved
 x = halfAdderProof1
@@ -327,12 +321,18 @@ x = halfAdderProof1
     _4bitAdderProof15
     _4bitAdderProof16
     _4bitAdderProof17
+    _8bitAdderProof1
+    _8bitAdderProof2
+    _8bitAdderProof3
+    _8bitAdderProof4
     incProof
-    incProofOverflow
     incProof2
     incProof16
-    invProof
-    invProof2
+    incProofLots
+    incProofOverflow
+    decProof
+    decProofUnderflow
+    decProofBorrow
     subtractProof0
     subtractProof1
     subtractProof2
@@ -341,9 +341,13 @@ x = halfAdderProof1
     subtractProof22
     subtractProof30
     subtractProof40
-    zeroProof1
+    subtractProof42
     zeroProof
-    negativeProof2
-    negativeProof
-    zeroProof3
+    zeroProof1
     zeroProof2
+    zeroProof3
+    negativeProof
+    negativeProof2
+    equalProof
+    equalProof2
+    equalProof3

@@ -75,10 +75,14 @@ orProof4 = nil
 
 -- when stuck I used nand game https://nandgame.com/#
 -- it's a bit easier as a diagram
+--
+-- This used to be nand, or and and: six nands. Four will do, and since the type
+-- checker bills by the gate, the processor runs faster on the cheap version.
 class Xor (input :: Axiom) (input2 :: Axiom) (out :: Axiom) | input input2 -> out
-instance ( Nand input input2 nout
-         , Or input input2 oout
-         , And oout nout out
+instance ( Nand input input2 both
+         , Nand input both notOnlyInput
+         , Nand input2 both notOnlyInput2
+         , Nand notOnlyInput notOnlyInput2 out
          ) =>
   Xor input input2 out
 

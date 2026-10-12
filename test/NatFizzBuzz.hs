@@ -5,12 +5,14 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE PolyKinds #-}
 
-module Main where
+-- | The original typelevel fizzbuzz, from before there was a processor.
+--   It cheats: GHC does the division. That makes it a fine referee for the
+--   processor, which has to earn every remainder with nand gates.
+module NatFizzBuzz (natFizzBuzz) where
 
 import GHC.TypeLits
 import Data.Proxy
 import Data.Type.Equality
-import Processor ()
 
 type family ShowNat (x :: Nat) :: Symbol where
   ShowNat 0 = "0"
@@ -39,11 +41,6 @@ type family FizzBuzz (x :: Nat) :: Symbol where
     (If (Mod x 3 == 0) "Fizz"
     (If (Mod x 5 == 0) "Buzz" (ShowNat x)))
 
-type family ShowOrd  (x :: Ordering) :: Symbol where
-  ShowOrd  'LT = "LT"
-  ShowOrd  'GT = "GT"
-  ShowOrd  'EQ = "EQ"
-
 -- I couldn't use my mcgyvered If because ghc would evaluate all
 -- branches anyway. This fixed it for some reason
 type family DecideBranch (start :: Nat) (end :: Nat) (ord :: Ordering) :: [Symbol] where
@@ -58,6 +55,6 @@ type family FoldCommas (input :: [Symbol]) :: Symbol where
   FoldCommas '[] = ""
   FoldCommas (x ': rem) = AppendSymbol (AppendSymbol x ",") (FoldCommas rem)
 
-main :: IO ()
-main = putStrLn $
-  symbolVal (Proxy @(FoldCommas (FizzBuzzes 1 95)))
+-- | "1,2,Fizz,...,Fizz Buzz," up to 15, trailing comma and all.
+natFizzBuzz :: String
+natFizzBuzz = symbolVal (Proxy @(FoldCommas (FizzBuzzes 1 15)))
